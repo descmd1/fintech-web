@@ -1,3 +1,4 @@
+
 # Fintech Offline-First Web App
 
 This project is a Progressive Web App (PWA) for offline-first fintech operations in Nigeria. It supports wallet management, transfers, airtime/bill payments, transaction history, and secure authentication, all with offline capabilities.
@@ -40,3 +41,6 @@ All user actions are stored locally and synced when online. Sensitive data is en
 ---
 
 For more details, see `copilot-instructions.md`.
+
+# fintech-web
+ a95ee8d2612976ac6bd987f5a0d1afbcd0aaa776
