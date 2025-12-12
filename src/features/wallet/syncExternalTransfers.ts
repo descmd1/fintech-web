@@ -4,7 +4,8 @@
 import { getExternalTransferQueue, removeExternalTransfer, updateExternalTransferStatus, ExternalTransfer } from './externalTransferQueue.ts';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api/wallet/external-transfer';
+// const API_URL = 'http://localhost:5000/api/wallet/external-transfer';
+const API_URL = 'https://offline-api.onrender.com/api/wallet/external-transfer';
 
 export async function syncExternalTransfers(token: string) {
   const queue: ExternalTransfer[] = await getExternalTransferQueue();

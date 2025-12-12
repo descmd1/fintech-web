@@ -13,7 +13,8 @@ import { createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { set, get } from 'idb-keyval';
 
-const API_URL = 'http://localhost:5000/api/wallet';
+// const API_URL = 'http://localhost:5000/api/wallet';
+const API_URL = 'https://offline-api.onrender.com/api/wallet';
 
 export const fetchBalance = createAsyncThunk('wallet/fetchBalance', async (_, thunkAPI) => {
   try {
