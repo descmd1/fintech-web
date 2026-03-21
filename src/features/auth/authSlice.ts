@@ -1,8 +1,14 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import axios from 'axios';
 
-// const API_URL = 'http://localhost:5000/api/auth';
 const API_URL = 'https://offline-api.onrender.com/api/auth';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  accountNumber?: string;
+}
 
 interface RegisterPayload {
   name: string;
@@ -17,47 +23,59 @@ interface LoginPayload {
 }
 
 interface AuthState {
-  user: any;
+  user: User | null;
   token: string | null;
   loading: boolean;
   error: string | null;
 }
 
-export const register = createAsyncThunk(
-  'auth/register',
-  async (userData: RegisterPayload, thunkAPI) => {
-    try {
-      const res = await axios.post(`${API_URL}/register`, userData);
-      return res.data;
-    } catch (err) {
-      let message = 'Registration failed';
-      if (axios.isAxiosError(err)) {
-        message = err.response?.data?.message || message;
-      }
-      return thunkAPI.rejectWithValue(message);
-    }
+const extractErrorMessage = (err: unknown, fallback: string): string => {
+  if (axios.isAxiosError(err)) {
+    return err.response?.data?.message || fallback;
   }
-);
+  return fallback;
+};
 
-export const login = createAsyncThunk(
-  'auth/login',
-  async (userData: LoginPayload, thunkAPI) => {
-    try {
-      const res = await axios.post(`${API_URL}/login`, userData);
-      return res.data;
-    } catch (err) {
-      let message = 'Login failed';
-      if (axios.isAxiosError(err)) {
-        message = err.response?.data?.message || message;
-      }
-      return thunkAPI.rejectWithValue(message);
-    }
+export const register = createAsyncThunk<
+  { user: User; token: string },
+  RegisterPayload,
+  { rejectValue: string }
+>('auth/register', async (userData, thunkAPI) => {
+  try {
+    const res = await axios.post(`${API_URL}/register`, userData);
+    return res.data;
+  } catch (err) {
+    return thunkAPI.rejectWithValue(extractErrorMessage(err, 'Registration failed'));
   }
-);
+});
+
+export const login = createAsyncThunk<
+  { user: User; token: string },
+  LoginPayload,
+  { rejectValue: string }
+>('auth/login', async (userData, thunkAPI) => {
+  try {
+    const res = await axios.post(`${API_URL}/login`, userData);
+    return res.data;
+  } catch (err) {
+    return thunkAPI.rejectWithValue(extractErrorMessage(err, 'Login failed'));
+  }
+});
+
+// Rehydrate from localStorage on app start
+const storedToken = localStorage.getItem('token');
+const storedUser = (() => {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+})();
 
 const initialState: AuthState = {
-  user: null,
-  token: null,
+  user: storedUser,
+  token: storedToken,
   loading: false,
   error: null,
 };
@@ -70,8 +88,12 @@ const authSlice = createSlice({
       state.user = null;
       state.token = null;
       localStorage.removeItem('token');
+      localStorage.removeItem('user');
     },
-    setCredentials: (state, action: PayloadAction<{ user: any; token: string }>) => {
+    clearAuthError: (state) => {
+      state.error = null;
+    },
+    setCredentials: (state, action: PayloadAction<{ user: User; token: string }>) => {
       state.user = action.payload.user;
       state.token = action.payload.token;
     },
@@ -87,10 +109,11 @@ const authSlice = createSlice({
         state.user = action.payload.user;
         state.token = action.payload.token;
         localStorage.setItem('token', action.payload.token);
+        localStorage.setItem('user', JSON.stringify(action.payload.user));
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error = action.payload ?? 'Registration failed';
       })
       .addCase(login.pending, (state) => {
         state.loading = true;
@@ -101,13 +124,14 @@ const authSlice = createSlice({
         state.user = action.payload.user;
         state.token = action.payload.token;
         localStorage.setItem('token', action.payload.token);
+        localStorage.setItem('user', JSON.stringify(action.payload.user));
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error = action.payload ?? 'Login failed';
       });
   },
 });
 
-export const { logout, setCredentials } = authSlice.actions;
+export const { logout, clearAuthError, setCredentials } = authSlice.actions;
 export default authSlice.reducer;

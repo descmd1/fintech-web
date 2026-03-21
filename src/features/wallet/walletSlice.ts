@@ -1,37 +1,36 @@
 
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import axios from 'axios';
+import { set, get } from 'idb-keyval';
 
 import {
   fundWallet,
   withdrawToBank,
   transfer,
   payBill,
-  fetchTransactions
+  fetchTransactions,
+  buyAirtime,
 } from './walletThunks.ts';
 
-import { createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
-import { set, get } from 'idb-keyval';
-
-// const API_URL = 'http://localhost:5000/api/wallet';
 const API_URL = 'https://offline-api.onrender.com/api/wallet';
 
-export const fetchBalance = createAsyncThunk('wallet/fetchBalance', async (_, thunkAPI) => {
-  try {
-    const token = localStorage.getItem('token');
-    const res = await axios.get(`${API_URL}/balance`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    await set('wallet_balance', res.data.balance);
-    return res.data.balance;
-  } catch (err) {
-    // Try to get cached balance if offline
-    const cached = await get('wallet_balance');
-    if (cached !== undefined) return cached;
-    return thunkAPI.rejectWithValue('Unable to fetch balance');
+export const fetchBalance = createAsyncThunk<number, void, { rejectValue: string }>(
+  'wallet/fetchBalance',
+  async (_, thunkAPI) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get<{ balance: number }>(`${API_URL}/balance`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await set('wallet_balance', res.data.balance);
+      return res.data.balance;
+    } catch {
+      const cached = await get<number>('wallet_balance');
+      if (cached !== undefined) return cached;
+      return thunkAPI.rejectWithValue('Unable to fetch balance');
+    }
   }
-});
-
+);
 
 interface Transaction {
   _id: string;
@@ -39,7 +38,7 @@ interface Transaction {
   amount: number;
   status: string;
   reference?: string;
-  details?: any;
+  details?: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -61,91 +60,76 @@ const initialState: WalletState = {
   txError: null,
 };
 
+const setBalance = (state: WalletState, balance: number) => {
+  state.loading = false;
+  state.balance = balance;
+  state.error = null;
+};
+
 const walletSlice = createSlice({
   name: 'wallet',
   initialState,
-  reducers: {},
+  reducers: {
+    clearWalletError: (state) => {
+      state.error = null;
+    },
+  },
   extraReducers: (builder) => {
     builder
-      // Balance
-      .addCase(fetchBalance.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(fetchBalance.fulfilled, (state, action) => {
-        state.loading = false;
-        state.balance = action.payload;
-      })
+      // ─── Balance ──────────────────────────────
+      .addCase(fetchBalance.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(fetchBalance.fulfilled, (state, action) => setBalance(state, action.payload))
       .addCase(fetchBalance.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error = action.payload ?? 'Unable to fetch balance';
       })
-      // Fund wallet
-      .addCase(fundWallet.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(fundWallet.fulfilled, (state, action) => {
-        state.loading = false;
-        state.balance = action.payload;
-      })
+      // ─── Fund ────────────────────────────────
+      .addCase(fundWallet.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(fundWallet.fulfilled, (state, action) => setBalance(state, action.payload))
       .addCase(fundWallet.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error = action.payload ?? 'Funding failed';
       })
-      // Withdraw to bank
-      .addCase(withdrawToBank.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(withdrawToBank.fulfilled, (state, action) => {
-        state.loading = false;
-        state.balance = action.payload;
-      })
+      // ─── Withdraw ────────────────────────────
+      .addCase(withdrawToBank.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(withdrawToBank.fulfilled, (state, action) => setBalance(state, action.payload))
       .addCase(withdrawToBank.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error = action.payload ?? 'Withdrawal failed';
       })
-      // Transfer
-      .addCase(transfer.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(transfer.fulfilled, (state, action) => {
-        state.loading = false;
-        state.balance = action.payload;
-      })
+      // ─── Transfer ────────────────────────────
+      .addCase(transfer.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(transfer.fulfilled, (state, action) => setBalance(state, action.payload))
       .addCase(transfer.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error = action.payload ?? 'Transfer failed';
       })
-      // Pay bill
-      .addCase(payBill.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(payBill.fulfilled, (state, action) => {
-        state.loading = false;
-        state.balance = action.payload;
-      })
+      // ─── Pay Bill ────────────────────────────
+      .addCase(payBill.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(payBill.fulfilled, (state, action) => setBalance(state, action.payload))
       .addCase(payBill.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error = action.payload ?? 'Bill payment failed';
       })
-      // Fetch transactions
-      .addCase(fetchTransactions.pending, (state) => {
-        state.txLoading = true;
-        state.txError = null;
+      // ─── Airtime ─────────────────────────────
+      .addCase(buyAirtime.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(buyAirtime.fulfilled, (state, action) => setBalance(state, action.payload))
+      .addCase(buyAirtime.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload ?? 'Airtime purchase failed';
       })
+      // ─── Transactions ────────────────────────
+      .addCase(fetchTransactions.pending, (state) => { state.txLoading = true; state.txError = null; })
       .addCase(fetchTransactions.fulfilled, (state, action) => {
         state.txLoading = false;
         state.transactions = action.payload;
       })
       .addCase(fetchTransactions.rejected, (state, action) => {
         state.txLoading = false;
-        state.txError = action.payload as string;
+        state.txError = action.payload ?? 'Unable to fetch transactions';
       });
   },
 });
 
+export const { clearWalletError } = walletSlice.actions;
 export default walletSlice.reducer;

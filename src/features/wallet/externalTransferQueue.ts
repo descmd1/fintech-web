@@ -1,7 +1,7 @@
 // src/features/wallet/externalTransferQueue.ts
 // Utility for queuing and syncing external bank transfers offline
 
-import { set, get, del, update } from 'idb-keyval';
+import { set, get } from 'idb-keyval';
 
 const QUEUE_KEY = 'external_transfer_queue';
 
