@@ -170,3 +170,24 @@ export const fetchBanks = createAsyncThunk<Bank[], void, { rejectValue: string }
     }
   }
 );
+
+export const resolveAccountName = createAsyncThunk<
+  { accountName: string; accountNumber: string; bankCode?: string; bankName?: string },
+  { accountNumber: string; bankCode?: string; bankName?: string },
+  { rejectValue: string }
+>('wallet/resolveAccountName', async (payload, thunkAPI) => {
+  try {
+    const res = await axios.get(`${API_URL}/resolve-account`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+      params: payload,
+    });
+    return res.data as {
+      accountName: string;
+      accountNumber: string;
+      bankCode?: string;
+      bankName?: string;
+    };
+  } catch (err) {
+    return thunkAPI.rejectWithValue(extractError(err, 'Unable to resolve account name'));
+  }
+});

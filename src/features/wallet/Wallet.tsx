@@ -14,6 +14,7 @@ import {
   buyAirtime,
   fetchBanks,
   Bank,
+  resolveAccountName,
 } from './walletThunks.ts';
 import { fetchBalance, clearWalletError } from './walletSlice.ts';
 import { logout } from '../auth/authSlice.ts';
@@ -84,6 +85,9 @@ const Wallet: React.FC = () => {
   const [banksLoading, setBanksLoading] = useState(false);
   const [banksError, setBanksError] = useState<string | null>(null);
   const [banksLoadAttempted, setBanksLoadAttempted] = useState(false);
+  const [resolvedAccountName, setResolvedAccountName] = useState<string | null>(null);
+  const [accountLookupLoading, setAccountLookupLoading] = useState(false);
+  const [accountLookupError, setAccountLookupError] = useState<string | null>(null);
   const [transferType, setTransferType] = useState<'internal' | 'external'>('internal');
 
   // Bill-specific
@@ -148,6 +152,51 @@ const Wallet: React.FC = () => {
     [banks, bankCode]
   );
 
+  useEffect(() => {
+    if (tab !== 'transfer' || transferType !== 'external') {
+      setResolvedAccountName(null);
+      setAccountLookupError(null);
+      setAccountLookupLoading(false);
+      return;
+    }
+
+    const normalizedAccountNumber = accountNumber.trim();
+    const normalizedBankCode = bankCode.trim();
+    const bankName = selectedBank?.name;
+
+    if (normalizedAccountNumber.length !== 10 || (!normalizedBankCode && !bankName)) {
+      setResolvedAccountName(null);
+      setAccountLookupError(null);
+      setAccountLookupLoading(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      setAccountLookupLoading(true);
+      setAccountLookupError(null);
+      const result = await dispatch<any>(
+        resolveAccountName({
+          accountNumber: normalizedAccountNumber,
+          bankCode: normalizedBankCode || undefined,
+          bankName,
+        })
+      );
+
+      if (resolveAccountName.fulfilled.match(result)) {
+        setResolvedAccountName(result.payload.accountName);
+        if (result.payload.bankCode && !normalizedBankCode) {
+          setBankCode(result.payload.bankCode);
+        }
+      } else {
+        setResolvedAccountName(null);
+        setAccountLookupError(result.payload || 'Unable to resolve account name');
+      }
+      setAccountLookupLoading(false);
+    }, 450);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [tab, transferType, accountNumber, bankCode, selectedBank?.name, dispatch]);
+
   // Clear errors and reset shared form state on tab change
   const switchTab = useCallback(
     (t: Tab) => {
@@ -157,6 +206,8 @@ const Wallet: React.FC = () => {
       setReference('');
       setDetails('');
       setBankQuery('');
+      setResolvedAccountName(null);
+      setAccountLookupError(null);
       if (t !== 'transfer') {
         setBanksLoadAttempted(false);
       }
@@ -224,7 +275,7 @@ const Wallet: React.FC = () => {
           details,
         });
         toast.success('Transfer queued — will process when online.');
-        setAmount(''); setAccountNumber(''); setBankCode(''); setBankQuery(''); setReference(''); setDetails('');
+        setAmount(''); setAccountNumber(''); setBankCode(''); setBankQuery(''); setResolvedAccountName(null); setAccountLookupError(null); setReference(''); setDetails('');
       } catch {
         toast.error('Failed to queue external transfer');
       }
@@ -444,6 +495,16 @@ const Wallet: React.FC = () => {
                       className={inputCls}
                     />
                   </InputGroup>
+                  {accountLookupLoading && (
+                    <p className="text-xs text-gray-500">Verifying account name...</p>
+                  )}
+                  {resolvedAccountName && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                      <p className="text-xs font-semibold text-emerald-700">Recipient Name</p>
+                      <p className="text-sm font-bold text-emerald-900">{resolvedAccountName}</p>
+                    </div>
+                  )}
+                  {accountLookupError && <p className="text-xs text-red-600">{accountLookupError}</p>}
                 </>
               )}
               {transferType === 'external' && selectedBank && (
