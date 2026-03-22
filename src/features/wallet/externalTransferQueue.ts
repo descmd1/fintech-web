@@ -8,7 +8,8 @@ const QUEUE_KEY = 'external_transfer_queue';
 export interface ExternalTransfer {
   id: string; // unique id
   accountNumber: string;
-  bankCode: string;
+  bankCode?: string;
+  bankName?: string;
   amount: number;
   reference?: string;
   details?: string;

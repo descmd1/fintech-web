@@ -17,6 +17,7 @@ export async function syncExternalTransfers(token: string) {
       await axios.post(API_URL, {
         accountNumber: transfer.accountNumber,
         bankCode: transfer.bankCode,
+        bankName: transfer.bankName,
         amount: transfer.amount,
         reference: transfer.reference,
         details: transfer.details,

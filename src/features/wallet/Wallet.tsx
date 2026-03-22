@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { queueExternalTransfer } from './externalTransferQueue.ts';
 import { syncExternalTransfers } from './syncExternalTransfers.ts';
@@ -12,6 +12,8 @@ import {
   payBill,
   fetchTransactions,
   buyAirtime,
+  fetchBanks,
+  Bank,
 } from './walletThunks.ts';
 import { fetchBalance, clearWalletError } from './walletSlice.ts';
 import { logout } from '../auth/authSlice.ts';
@@ -77,6 +79,11 @@ const Wallet: React.FC = () => {
   // Transfer-specific
   const [accountNumber, setAccountNumber] = useState('');
   const [bankCode, setBankCode] = useState('');
+  const [bankQuery, setBankQuery] = useState('');
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [banksLoading, setBanksLoading] = useState(false);
+  const [banksError, setBanksError] = useState<string | null>(null);
+  const [banksLoadAttempted, setBanksLoadAttempted] = useState(false);
   const [transferType, setTransferType] = useState<'internal' | 'external'>('internal');
 
   // Bill-specific
@@ -103,6 +110,44 @@ const Wallet: React.FC = () => {
     dispatch<any>(fetchTransactions());
   }, [dispatch]);
 
+  const loadBanks = useCallback(async () => {
+    setBanksLoadAttempted(true);
+    setBanksLoading(true);
+    setBanksError(null);
+    const result = await dispatch<any>(fetchBanks());
+    if (fetchBanks.fulfilled.match(result)) {
+      setBanks(result.payload || []);
+    } else {
+      setBanksError(result.payload || 'Unable to fetch banks');
+    }
+    setBanksLoading(false);
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (
+      tab === 'transfer' &&
+      transferType === 'external' &&
+      banks.length === 0 &&
+      !banksLoading &&
+      !banksLoadAttempted
+    ) {
+      loadBanks();
+    }
+  }, [tab, transferType, banks.length, banksLoading, banksLoadAttempted, loadBanks]);
+
+  const filteredBanks = useMemo(() => {
+    const query = bankQuery.trim().toLowerCase();
+    if (!query) return banks;
+    return banks.filter((bank) => {
+      return bank.name.toLowerCase().includes(query) || bank.code.includes(query);
+    });
+  }, [banks, bankQuery]);
+
+  const selectedBank = useMemo(
+    () => banks.find((bank) => bank.code === bankCode) || null,
+    [banks, bankCode]
+  );
+
   // Clear errors and reset shared form state on tab change
   const switchTab = useCallback(
     (t: Tab) => {
@@ -111,6 +156,10 @@ const Wallet: React.FC = () => {
       setAmount('');
       setReference('');
       setDetails('');
+      setBankQuery('');
+      if (t !== 'transfer') {
+        setBanksLoadAttempted(false);
+      }
     },
     [dispatch]
   );
@@ -162,11 +211,20 @@ const Wallet: React.FC = () => {
         toast.error(result.payload || 'Transfer failed');
       }
     } else {
-      if (!bankCode) return toast.error('Bank code is required for external transfers');
+      if (!bankCode && !selectedBank?.name) {
+        return toast.error('Select recipient bank or enter bank code');
+      }
       try {
-        await queueExternalTransfer({ accountNumber, bankCode, amount: amt, reference, details });
+        await queueExternalTransfer({
+          accountNumber,
+          bankCode: bankCode || undefined,
+          bankName: selectedBank?.name,
+          amount: amt,
+          reference,
+          details,
+        });
         toast.success('Transfer queued — will process when online.');
-        setAmount(''); setAccountNumber(''); setBankCode(''); setReference(''); setDetails('');
+        setAmount(''); setAccountNumber(''); setBankCode(''); setBankQuery(''); setReference(''); setDetails('');
       } catch {
         toast.error('Failed to queue external transfer');
       }
@@ -342,9 +400,56 @@ const Wallet: React.FC = () => {
                 <input type="text" placeholder="10-digit account number" value={accountNumber} onChange={e => setAccountNumber(e.target.value)} className={inputCls} required />
               </InputGroup>
               {transferType === 'external' && (
-                <InputGroup label="Bank Code *">
-                  <input type="text" placeholder="e.g. 058 for GTBank" value={bankCode} onChange={e => setBankCode(e.target.value)} className={inputCls} required />
-                </InputGroup>
+                <>
+                  <InputGroup label="Select Bank *">
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Search bank name"
+                        value={bankQuery}
+                        onChange={e => setBankQuery(e.target.value)}
+                        className={inputCls}
+                      />
+                      <select
+                        value={bankCode}
+                        onChange={e => setBankCode(e.target.value)}
+                        className={inputCls}
+                        required
+                      >
+                        <option value="">{banksLoading ? 'Loading banks...' : 'Select bank'}</option>
+                        {filteredBanks.map((bank) => (
+                          <option key={bank.code} value={bank.code}>
+                            {bank.name} ({bank.code})
+                          </option>
+                        ))}
+                      </select>
+                      {banksError && <p className="text-xs text-red-600">{banksError}</p>}
+                      {banksError && (
+                        <button
+                          type="button"
+                          onClick={() => loadBanks()}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          Retry bank list
+                        </button>
+                      )}
+                    </div>
+                  </InputGroup>
+                  <InputGroup label="Bank Code (optional)">
+                    <input
+                      type="text"
+                      placeholder="Optional: enter code if bank is not listed"
+                      value={bankCode}
+                      onChange={e => setBankCode(e.target.value)}
+                      className={inputCls}
+                    />
+                  </InputGroup>
+                </>
+              )}
+              {transferType === 'external' && selectedBank && (
+                <p className="text-xs text-blue-700 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100">
+                  Selected bank: <span className="font-semibold">{selectedBank.name}</span>
+                </p>
               )}
               <InputGroup label="Amount (₦) *">
                 <input type="number" min="1" step="any" placeholder="e.g. 1000" value={amount} onChange={e => setAmount(e.target.value)} className={inputCls} required />
